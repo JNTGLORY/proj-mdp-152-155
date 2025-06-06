@@ -1,0 +1,57 @@
+pipeline {
+    agent any
+    environment {
+        DOCKER_IMAGE = 'jntglory/calculator'
+        DOCKER_CREDENTIALS_ID = 'jenkins'
+    }
+    stages {
+        // Stage 1: Clone Repository
+        stage('Clone Code') {
+            steps {
+                git branch: 'project1',
+                     url: 'https://github.com/JNTGLORY/proj-mdp-152-155.git'
+            }
+        }
+        // Stage 2: Build Docker Image
+        stage('Docker Build') {
+            steps {
+                script {
+                    sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_NUMBER} -t ${DOCKER_IMAGE}:latest ."
+                }
+            }
+        }
+        // Stage 3: Push to Docker Hub
+        stage('Docker Push') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
+                        docker.image("${DOCKER_IMAGE}:${env.BUILD_NUMBER}").push()
+                        docker.image("${DOCKER_IMAGE}:latest").push()
+                    }
+                }
+            }
+        }
+        // :white_tick: Stage 5: Deploy Docker Container (use port 8000 to avoid Jenkins conflict)
+        stage('Run Container') {
+            steps {
+                script {
+                    // Stop any existing container using the same image (optional)
+                    sh """
+                        docker ps -q --filter ancestor=${DOCKER_IMAGE}:latest | xargs -r docker stop
+                        docker ps -a -q --filter ancestor=${DOCKER_IMAGE}:latest | xargs -r docker rm
+                        docker run -d -p 8000:8080 ${DOCKER_IMAGE}:latest
+                    """
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()
+        }
+        success {
+            echo "Pipeline succeeded! App is running on port 8000"
+        }
+    }
+}
